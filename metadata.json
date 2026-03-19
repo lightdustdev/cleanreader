@@ -1,0 +1,5 @@
+{
+  "name": "Clean Reader",
+  "description": "Extracts the main content from a web page, removing ads and distractions.",
+  "requestFramePermissions": []
+}
