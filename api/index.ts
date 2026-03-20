@@ -5,7 +5,7 @@
 
 import express from "express";
 import { Readability } from "@mozilla/readability";
-import { JSDOM } from "jsdom";
+import { parseHTML } from "linkedom";
 
 const BROWSER_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -62,8 +62,10 @@ app.post("/api/extract", async (req, res) => {
     let html = await fetchHtml(url);
     html = stripStyles(html);
 
-    const doc = new JSDOM(html, { url });
-    const article = new Readability(doc.window.document).parse();
+    // Inject <base> so Readability resolves relative URLs correctly
+    const htmlWithBase = html.replace(/<head([^>]*)>/i, `<head$1><base href="${url}">`);
+    const { document } = parseHTML(htmlWithBase);
+    const article = new Readability(document as any).parse();
 
     if (!article) {
       return res.status(500).json({ error: "Failed to extract content from the page" });
@@ -97,16 +99,16 @@ app.post("/api/extract-index", async (req, res) => {
     let html = await fetchHtml(url);
     html = stripStyles(html, true);
 
-    const doc = new JSDOM(html, { url });
+    const { document } = parseHTML(html);
     const links: { title: string; url: string }[] = [];
     const seenUrls = new Set<string>();
 
-    const mainNode = doc.window.document.querySelector(
+    const mainNode = document.querySelector(
       'main, [role="main"], #main, .main, #content, .content'
     );
-    const searchRoot = mainNode || doc.window.document.body || doc.window.document;
+    const searchRoot = mainNode || document.body || document;
 
-    searchRoot.querySelectorAll("a").forEach((a: any) => {
+    (searchRoot as any).querySelectorAll("a").forEach((a: any) => {
       const title = a.textContent?.trim().replace(/\s+/g, " ") || "";
       const href = a.getAttribute("href");
 

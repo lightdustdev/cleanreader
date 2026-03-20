@@ -1,5 +1,5 @@
 import { Readability } from "@mozilla/readability";
-import { JSDOM } from "jsdom";
+import { parseHTML } from "linkedom";
 
 export const BROWSER_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -55,8 +55,9 @@ export interface ArticleResult {
 }
 
 export function extractArticle(html: string, url: string): ArticleResult | null {
-  const doc = new JSDOM(html, { url });
-  const reader = new Readability(doc.window.document);
+  const htmlWithBase = html.replace(/<head([^>]*)>/i, `<head$1><base href="${url}">`);
+  const { document } = parseHTML(htmlWithBase);
+  const reader = new Readability(document as any);
   return reader.parse() as ArticleResult | null;
 }
 
@@ -66,16 +67,16 @@ export interface IndexLink {
 }
 
 export function extractIndex(html: string, baseUrl: string): IndexLink[] {
-  const doc = new JSDOM(html, { url: baseUrl });
+  const { document } = parseHTML(html);
   const links: IndexLink[] = [];
   const seenUrls = new Set<string>();
 
-  const mainNode = doc.window.document.querySelector(
+  const mainNode = document.querySelector(
     'main, [role="main"], #main, .main, #content, .content'
   );
-  const searchRoot = mainNode || doc.window.document.body || doc.window.document;
+  const searchRoot = mainNode || document.body || document;
 
-  searchRoot.querySelectorAll("a").forEach((a: any) => {
+  (searchRoot as any).querySelectorAll("a").forEach((a: any) => {
     const title = a.textContent?.trim().replace(/\s+/g, " ") || "";
     const href = a.getAttribute("href");
 
