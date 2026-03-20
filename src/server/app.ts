@@ -1,6 +1,6 @@
 import express from "express";
 import { Readability } from "@mozilla/readability";
-import { JSDOM } from "jsdom";
+import { JSDOM, VirtualConsole } from "jsdom";
 
 const BROWSER_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -20,11 +20,10 @@ const app = express();
 app.use(express.json());
 
 // API routes
-// Note: Netlify functions often prefix with /.netlify/functions/api
-// but we'll handle routing in the function wrapper or netlify.toml
 const router = express.Router();
 
 router.post("/extract", async (req, res) => {
+  let timeoutId;
   try {
     const { url } = req.body;
     if (!url) {
@@ -32,13 +31,24 @@ router.post("/extract", async (req, res) => {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    // Allow up to 20 seconds for the entire process. 
+    // This gives Netlify (set to 26s) enough time to handle the response.
+    timeoutId = setTimeout(() => controller.abort(), 20000);
 
-    const response = await fetch(url, {
-      headers: BROWSER_HEADERS,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+    let response;
+    try {
+      response = await fetch(url, {
+        headers: BROWSER_HEADERS,
+        signal: controller.signal,
+      });
+    } catch (fetchError: any) {
+      if (fetchError.name === 'AbortError') {
+        return res.status(504).json({ error: "The request timed out while fetching the page." });
+      }
+      throw fetchError;
+    }
+    
+    if (timeoutId) clearTimeout(timeoutId);
 
     if (!response.ok) {
       return res.status(400).json({ error: `Target website returned an error (${response.status} ${response.statusText}). They might be blocking automated readers.` });
@@ -46,11 +56,23 @@ router.post("/extract", async (req, res) => {
 
     let html = await response.text();
     
-    // Workaround for jsdom/cssstyle bug with CSS variables
-    html = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
-    html = html.replace(/\sstyle=(['"])[^\1]*?\1/gi, '');
+    // Pre-process HTML to reduce JSDOM memory/CPU load
+    const tagsToRemove = [
+      'style', 'script', 'svg', 'canvas', 'video', 'audio', 'iframe', 
+      'nav', 'footer', 'header', 'aside', 'noscript', 'ad'
+    ];
+    
+    for (const tag of tagsToRemove) {
+      const regex = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, 'gi');
+      html = html.replace(regex, '');
+    }
+    
+    html = html.replace(/\sstyle=(['"])(.*?)\1/gi, '');
 
-    const doc = new JSDOM(html, { url });
+    const doc = new JSDOM(html, { 
+      url,
+      virtualConsole: new VirtualConsole()
+    });
     const reader = new Readability(doc.window.document);
     const article = reader.parse();
 
@@ -68,13 +90,19 @@ router.post("/extract", async (req, res) => {
       dir: article.dir,
       siteName: article.siteName,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (timeoutId) clearTimeout(timeoutId);
     console.error("Extraction error:", error);
-    res.status(500).json({ error: "An error occurred while extracting content" });
+    const status = error.name === 'AbortError' ? 504 : 500;
+    const message = error.name === 'AbortError' 
+      ? "The extraction process timed out." 
+      : "An error occurred while extracting content";
+    res.status(status).json({ error: message });
   }
 });
 
 router.post("/extract-index", async (req, res) => {
+  let timeoutId;
   try {
     const { url } = req.body;
     if (!url) {
@@ -82,13 +110,14 @@ router.post("/extract-index", async (req, res) => {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    timeoutId = setTimeout(() => controller.abort(), 20000);
 
     const response = await fetch(url, {
       headers: BROWSER_HEADERS,
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
+    
+    if (timeoutId) clearTimeout(timeoutId);
 
     if (!response.ok) {
       return res.status(400).json({ error: `Target website returned an error (${response.status} ${response.statusText}). They might be blocking automated readers.` });
@@ -96,12 +125,22 @@ router.post("/extract-index", async (req, res) => {
 
     let html = await response.text();
     
-    // Workaround for jsdom/cssstyle bug with CSS variables
-    html = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
-    html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
-    html = html.replace(/\sstyle=(['"])[^\1]*?\1/gi, '');
+    const tagsToRemove = [
+      'style', 'script', 'svg', 'canvas', 'video', 'audio', 'iframe', 
+      'nav', 'footer', 'header', 'aside', 'noscript', 'ad'
+    ];
+    
+    for (const tag of tagsToRemove) {
+      const regex = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, 'gi');
+      html = html.replace(regex, '');
+    }
+    
+    html = html.replace(/\sstyle=(['"])(.*?)\1/gi, '');
 
-    const doc = new JSDOM(html, { url });
+    const doc = new JSDOM(html, { 
+      url,
+      virtualConsole: new VirtualConsole()
+    });
     const links: {title: string, url: string}[] = [];
     const seenUrls = new Set<string>();
 
@@ -131,15 +170,14 @@ router.post("/extract-index", async (req, res) => {
     });
 
     res.json({ links });
-  } catch (error) {
+  } catch (error: any) {
+    if (timeoutId) clearTimeout(timeoutId);
     console.error("Index extraction error:", error);
-    res.status(500).json({ error: "An error occurred while extracting the index" });
+    const status = error.name === 'AbortError' ? 504 : 500;
+    res.status(status).json({ error: "An error occurred while extracting the index" });
   }
 });
 
-// For local dev, we might mount this at /api
-// For Netlify, the function itself handles the routing based on filename
 app.use("/api", router);
 
-// Also expose router directly for Netlify serverless-http wrapper
 export { app, router };
