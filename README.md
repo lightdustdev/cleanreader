@@ -9,7 +9,7 @@ It uses the **Firefox Reader View engine** (`@mozilla/readability`) under the ho
 - **Article Mode**: Extract clean, readable text from any specific article URL.
 - **Index Mode**: Scan a homepage or blog feed to automatically find and list readable articles.
 - **No Ads, No Clutter**: Enjoy a pure reading experience.
-- **Serverless Ready**: Built with a modular backend ready for deployment on platforms like Netlify.
+- **Serverless Ready**: Deployed on Vercel using native serverless API functions.
 
 ## Local Development
 
@@ -19,33 +19,28 @@ It uses the **Firefox Reader View engine** (`@mozilla/readability`) under the ho
    ```bash
    npm install
    ```
-2. **Configure environment:** (Optional)
-   Copy `.env.example` to `.env.local` if you need to override the default `APP_URL`.
-   ```bash
-   cp .env.example .env.local
-   ```
-3. **Run the development server:**
+2. **Run the development server:**
    ```bash
    npm run dev
    ```
    This will start both the Vite frontend and the Express backend API on `http://localhost:3000`.
 
-## Deployment (Netlify)
+## Deployment (Vercel)
 
-This project is pre-configured for easy deployment to Netlify using Netlify Functions.
+This project is pre-configured for deployment to [Vercel](https://vercel.com).
 
-1. Create a repository (GitHub, GitLab, etc.) and push your code.
-2. Connect the repository to Netlify.
-3. Netlify will automatically use the settings in `netlify.toml` to build the app and deploy the API as a serverless function.
+1. Push your code to a GitHub repository.
+2. Import the repository at [vercel.com/new](https://vercel.com/new).
+3. Vercel will automatically detect the `vercel.json` config, run `npm run build`, and deploy the API functions from the `api/` directory.
 
-Alternatively, you can use the Netlify CLI:
+Alternatively, use the Vercel CLI:
 ```bash
-npm install -g netlify-cli
-netlify deploy --prod
+npm install -g vercel
+vercel --prod
 ```
 
 ## Tech Stack
 
 - **Frontend**: React, Vite, Tailwind CSS, Lucide Icons
-- **Backend**: Express.js, serverless-http (for Netlify deployment)
+- **Backend**: Express.js (local dev), Vercel Serverless Functions (production)
 - **Engine**: `@mozilla/readability`, `jsdom`, `dompurify`
